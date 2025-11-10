@@ -31,9 +31,6 @@ import { useNavigate } from "react-router-dom";
 import { DataGrid, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid";
 import dayjs from "dayjs";
 
-/**
- * Utility: format money using company currency symbol
- */
 const formatMoney = (value: number | null | undefined, symbol = "$") => {
     if (value == null) return "-";
     return `${symbol}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -44,10 +41,8 @@ type RangeKey = "today" | "week" | "month" | "year" | "custom";
 export default function InvoicesPage() {
     const navigate = useNavigate();
     const { authInfo, isAuthenticated, loading, /* fallback: company may be in context user/company */ } = useContext(AuthContext);
-    // company's currency symbol: try context company, then token payload, fallback "$"
     const company = (authInfo && authInfo._raw && authInfo._raw.company) ? authInfo._raw.company : null;
     const currencySymbol = (company?.currencySymbol) ?? (authInfo?._raw?.currencySymbol) ?? "$";
-
     const [range, setRange] = useState<RangeKey>("month");
     const [customFrom, setCustomFrom] = useState<string>("");
     const [customTo, setCustomTo] = useState<string>("");
@@ -79,7 +74,6 @@ export default function InvoicesPage() {
     const openColMenu = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
     const closeColMenu = () => setAnchorEl(null);
 
-    // compute date range from range key
     const computeFromTo = () => {
         const today = dayjs().startOf("day");
         let from = today.startOf("month");
@@ -110,60 +104,92 @@ export default function InvoicesPage() {
         return { from: from.format("YYYY-MM-DD"), to: to.format("YYYY-MM-DD") };
     };
 
-    // fetch all 4 calls in parallel
     const loadAll = async () => {
         setLoadingData(true);
         const { from, to } = computeFromTo();
 
+        const pList = InvoiceService.getList(from, to);
+        const pMetrics = InvoiceService.getMetrics(from, to);
+        const pTrend = InvoiceService.getTrend12M();
+        const pTop = InvoiceService.getTopItems(from, to);
+
         try {
-            const [listRes, metricsRes, trendRes, topRes] = await Promise.all([
-                InvoiceService.getList(from, to),
-                InvoiceService.getMetrics(from, to),
-                InvoiceService.getTrend12M(),
-                InvoiceService.getTopItems(from, to),
-            ]);
+            const results = await Promise.allSettled([pList, pMetrics, pTrend, pTop]);
 
-            // normalize list items if backend uses different keys (safe guard)
-            const list = (listRes?.data ?? []).map((r: any) => ({
-                invoiceID: r.invoiceID ?? r.InvoiceID,
-                invoiceNo: r.invoiceNo ?? r.invoiceNo ?? (r.invoiceNumber ?? ""),
-                invoiceDate: r.invoiceDate ?? r.invoiceDate ?? r.InvoiceDate,
-                customerName: r.customerName ?? r.customerName ?? r.CustomerName,
-                itemsCount: r.itemsCount ?? r.ItemsCount ?? r.items ?? 0,
-                subTotal: Number(r.subTotal ?? r.SubTotal ?? 0),
-                taxPercentage: Number(r.taxPercentage ?? r.TaxPercentage ?? 0),
-                taxAmount: Number(r.taxAmount ?? r.TaxAmount ?? 0),
-                invoiceAmount: Number(r.invoiceAmount ?? r.InvoiceAmount ?? r.invoiceAmount ?? 0),
-                updatedOn: r.updatedOn ?? r.UpdatedOn ?? null,
-                __raw: r,
-            }));
+            const [listRes, metricsRes, trendRes, topRes] = results;
 
-            setInvoices(list);
-            setFiltered(list);
+            // ---------- LIST ----------
+            if (listRes.status === "fulfilled") {
+                const rawList = listRes.value?.data ?? [];
+                const list = (rawList || []).map((r: any) => ({
+                    // fallback to primaryKeyID because some responses include it
+                    invoiceID: r.invoiceID ?? r.InvoiceID ?? r.primaryKeyID ?? 0,
+                    // always normalise invoiceNo to string (null => "")
+                    invoiceNo: String(r.invoiceNo ?? r.InvoiceNo ?? r.invoiceNumber ?? "" ?? ""),
+                    invoiceDate: r.invoiceDate ?? r.InvoiceDate ?? r.invoiceDateString ?? null,
+                    customerName: r.customerName ?? r.CustomerName ?? "",
+                    itemsCount: Number(r.itemsCount ?? r.ItemsCount ?? r.items ?? 0),
+                    subTotal: Number(r.subTotal ?? r.SubTotal ?? 0),
+                    taxPercentage: Number(r.taxPercentage ?? r.TaxPercentage ?? 0),
+                    taxAmount: Number(r.taxAmount ?? r.TaxAmount ?? 0),
+                    invoiceAmount: Number(r.invoiceAmount ?? r.InvoiceAmount ?? r.invoiceAmount ?? 0),
+                    updatedOn: r.updatedOn ?? r.UpdatedOn ?? null,
+                    __raw: r,
+                }));
 
-            setMetrics({
-                invoiceCount: metricsRes?.data?.invoiceCount ?? metricsRes?.data?.InvoiceCount ?? 0,
-                totalAmount: Number(metricsRes?.data?.totalAmount ?? metricsRes?.data?.TotalAmount ?? 0),
-            });
+                setInvoices(list);
+                setFiltered(list);
+            } else {
+                console.warn("getList failed", listRes.reason);
+                setInvoices([]);
+                setFiltered([]);
+            }
 
-            setTrend12((trendRes?.data ?? []).map((t: any) => ({
-                monthStart: t.monthStart,
-                invoiceCount: t.invoiceCount ?? t.InvoiceCount ?? 0,
-                amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
-            })));
+            // ---------- METRICS ----------
+            if (metricsRes.status === "fulfilled") {
+                const md = metricsRes.value?.data ?? {};
+                setMetrics({
+                    invoiceCount: md.invoiceCount ?? md.InvoiceCount ?? 0,
+                    totalAmount: Number(md.totalAmount ?? md.TotalAmount ?? 0),
+                });
+            } else {
+                console.warn("getMetrics failed", metricsRes.reason);
+                setMetrics({ invoiceCount: 0, totalAmount: 0 });
+            }
 
-            setTopItems((topRes?.data ?? []).map((t: any) => ({
-                itemID: t.itemID,
-                itemName: t.itemName,
-                amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
-            })));
-        } catch (err: any) {
-            console.error("Failed to load invoices data", err);
-            // On 401 your api interceptor should redirect; otherwise you can show banner
+            // ---------- TREND (safe to ignore failure) ----------
+            if (trendRes.status === "fulfilled") {
+                const tr = trendRes.value?.data ?? [];
+                setTrend12((tr || []).map((t: any) => ({
+                    monthStart: t.monthStart,
+                    invoiceCount: t.invoiceCount ?? t.InvoiceCount ?? 0,
+                    amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
+                })));
+            } else {
+                console.warn("getTrend12M failed", trendRes.reason);
+                setTrend12([]);
+            }
+
+            // ---------- TOP ITEMS ----------
+            if (topRes.status === "fulfilled") {
+                const top = topRes.value?.data ?? [];
+                setTopItems((top || []).map((t: any) => ({
+                    itemID: t.itemID,
+                    itemName: t.itemName,
+                    amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
+                })));
+            } else {
+                console.warn("getTopItems failed", topRes.reason);
+                setTopItems([]);
+            }
+        } catch (ex) {
+            // unexpected (shouldn't happen because we handled allSettled)
+            console.error("Unexpected loadAll error", ex);
         } finally {
             setLoadingData(false);
         }
     };
+
 
     // initial load and on range change
     useEffect(() => {

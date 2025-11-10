@@ -25,7 +25,7 @@ import dayjs from "dayjs";
 import InvoiceService from "../services/invoice.service";
 import { AuthContext } from "../contexts/AuthContext";
 import { useNavigate, useParams } from "react-router-dom";
-import {ItemService} from "../services/item.service";
+import { ItemService } from "../services/item.service";
 
 type ItemOption = { itemID: number; itemName: string; description?: string; saleRate?: number; discountPct?: number };
 
@@ -303,23 +303,68 @@ export default function InvoiceEditor() {
 
   const onSave = async () => {
     setServerError(null);
-    if (!validateAll()) return;
 
-    const payload = {
-      invoiceID: editingId || 0,
-      invoiceNo: invoiceNo?.trim(),
-      invoiceDate: invoiceDate,
-      customerName: customerName?.trim(),
-      address: address?.trim(),
-      city: city?.trim(),
-      notes: notes?.trim(),
+    // Client validations
+    const trimmedCustomer = (customerName ?? "").trim();
+    if (!trimmedCustomer) {
+      setServerError("Customer Name is required. Please enter customer name.");
+      return;
+    }
+    if (!invoiceDate) {
+      setServerError("Invoice Date is required. Please pick a date.");
+      return;
+    }
+
+    // Validate lines
+    if (!Array.isArray(lines) || lines.length === 0) {
+      setServerError("Add at least one line.");
+      return;
+    }
+
+    const invalidLine = lines.find((r) =>
+      !r.itemID ||
+      Number(r.qty || 0) <= 0 ||
+      Number(r.rate || 0) < 0 ||
+      Number(r.discountPct || 0) < 0 ||
+      Number(r.discountPct || 0) > 100
+    );
+
+    if (invalidLine) {
+      setServerError("Each line must have an item, qty > 0, rate ≥ 0 and discount 0–100.");
+      setLines((prev) =>
+        prev.map((r) => {
+          if (r._uid !== invalidLine._uid) return r;
+          return {
+            ...r,
+            errors: {
+              itemID: !r.itemID ? "Pick an item." : "",
+              qty: Number(r.qty) <= 0 ? "Qty must be > 0" : "",
+              rate: Number(r.rate) < 0 ? "Rate must be ≥ 0" : "",
+              discountPct: Number(r.discountPct) < 0 || Number(r.discountPct) > 100 ? "Disc 0–100" : ""
+            }
+          };
+        })
+      );
+      return;
+    }
+
+    // Build payload - don't include invoiceNo for new invoices
+    const uiPayload: any = {
+      ...(editingId ? { invoiceID: editingId } : {}),
+      // Only include invoiceNo when editing and it exists
+      ...(editingId && invoiceNo ? { invoiceNo: Number(invoiceNo) || 0 } : {}),
+      invoiceDate,
+      customerName: trimmedCustomer,
+      address: address.trim(),
+      city: city.trim(),
+      notes: notes.trim(),
       taxPercentage: round2(Number(taxPct || 0)),
       taxAmount: round2(Number(taxAmt || 0)),
       subTotal: round2(Number(subTotal || 0)),
       invoiceAmount: round2(Number(invoiceAmount || 0)),
       updatedOnPrev: updatedOnPrev ?? null,
       lines: lines.map((r, idx) => ({
-        lineNo: idx + 1,
+        lineNo: idx + 1,  // This will be converted to RowNo in toServerModel
         itemID: r.itemID,
         description: r.description?.trim() ?? "",
         qty: round2(Number(r.qty || 0)),
@@ -330,21 +375,30 @@ export default function InvoiceEditor() {
 
     setSaving(true);
     try {
-      const res = await InvoiceService.insertUpdate(payload);
+      const res = await InvoiceService.insertUpdate(uiPayload);
       const data = res?.data ?? {};
       const savedId = data.invoiceID ?? data.invoiceId ?? data.id ?? editingId ?? 0;
+       const savedInvoiceNo = data.invoiceNo ?? data.InvoiceNo ?? null;
       const updatedOn = data.updatedOn ?? data.updatedOnOn ?? null;
       setUpdatedOnPrev(updatedOn);
       alert("Saved.");
+        if (savedId) {
+    setUpdatedOnPrev(updatedOn);
+    // if server assigned invoice number, set it in UI (so user sees it)
+    if (savedInvoiceNo !== null && savedInvoiceNo !== undefined) {
+      setInvoiceNo(String(savedInvoiceNo));
+    }
+  }
+
       navigate("/invoices");
     } catch (err: any) {
       console.error("Save failed", err);
-      const serverData = err?.response?.data;
-      if (serverData?.errors) {
-        const messages = Object.entries(serverData.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join("\n");
+      const sd = err?.response?.data;
+      if (sd?.errors) {
+        const messages = Object.entries(sd.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join("\n");
         setServerError(messages);
-      } else if (serverData?.message) {
-        setServerError(serverData.message);
+      } else if (sd?.message) {
+        setServerError(sd.message);
       } else {
         setServerError("Save failed. Please check details.");
       }
