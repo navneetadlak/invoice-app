@@ -14,9 +14,12 @@ import {
     MenuList,
     FormControlLabel,
     Checkbox,
-    Select,
-    InputLabel,
     FormControl,
+    InputAdornment,
+    Card,
+    CardContent,
+    useTheme,
+    useMediaQuery,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DownloadIcon from "@mui/icons-material/FileDownload";
@@ -25,6 +28,11 @@ import EditIcon from "@mui/icons-material/Edit";
 import PrintIcon from "@mui/icons-material/Print";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SearchIcon from "@mui/icons-material/Search";
+import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
+import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
+import ReceiptIcon from "@mui/icons-material/Receipt";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import PieChartIcon from "@mui/icons-material/PieChart";
 import InvoiceService from "../services/invoice.service";
 import { AuthContext } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -40,10 +48,15 @@ type RangeKey = "today" | "week" | "month" | "year" | "custom";
 
 export default function InvoicesPage() {
     const navigate = useNavigate();
-    const { authInfo, isAuthenticated, loading, /* fallback: company may be in context user/company */ } = useContext(AuthContext);
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+    const isSmallMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
+    const { authInfo, isAuthenticated, loading } = useContext(AuthContext);
     const company = (authInfo && authInfo._raw && authInfo._raw.company) ? authInfo._raw.company : null;
     const currencySymbol = (company?.currencySymbol) ?? (authInfo?._raw?.currencySymbol) ?? "$";
-    const [range, setRange] = useState<RangeKey>("month");
+
+    const [range, setRange] = useState<RangeKey>("today");
     const [customFrom, setCustomFrom] = useState<string>("");
     const [customTo, setCustomTo] = useState<string>("");
 
@@ -69,38 +82,26 @@ export default function InvoicesPage() {
         actions: true,
     });
 
-    // menu anchor for column chooser
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const openColMenu = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
     const closeColMenu = () => setAnchorEl(null);
 
     const computeFromTo = () => {
         const today = dayjs().startOf("day");
-        let from = today.startOf("month");
+        let from = today.startOf("day");
         let to = today.endOf("day");
-        if (range === "today") {
-            from = today.startOf("day");
-            to = today.endOf("day");
-        } else if (range === "week") {
+
+        if (range === "week") {
             from = today.startOf("week");
-            to = today.endOf("day");
         } else if (range === "month") {
             from = today.startOf("month");
-            to = today.endOf("day");
         } else if (range === "year") {
             from = today.startOf("year");
-            to = today.endOf("day");
-        } else if (range === "custom") {
-            // use customFrom/customTo if present, else fallback to month
-            if (customFrom && customTo) {
-                from = dayjs(customFrom).startOf("day");
-                to = dayjs(customTo).endOf("day");
-            } else {
-                from = today.startOf("month");
-                to = today.endOf("day");
-            }
+        } else if (range === "custom" && customFrom && customTo) {
+            from = dayjs(customFrom).startOf("day");
+            to = dayjs(customTo).endOf("day");
         }
-        // return YYYY-MM-DD for API
+
         return { from: from.format("YYYY-MM-DD"), to: to.format("YYYY-MM-DD") };
     };
 
@@ -108,97 +109,73 @@ export default function InvoicesPage() {
         setLoadingData(true);
         const { from, to } = computeFromTo();
 
-        const pList = InvoiceService.getList(from, to);
-        const pMetrics = InvoiceService.getMetrics(from, to);
-        const pTrend = InvoiceService.getTrend12M();
-        const pTop = InvoiceService.getTopItems(from, to);
-
         try {
-            const results = await Promise.allSettled([pList, pMetrics, pTrend, pTop]);
+            const [listRes, metricsRes, trendRes, topRes] = await Promise.allSettled([
+                InvoiceService.getList(from, to),
+                InvoiceService.getMetrics(from, to),
+                InvoiceService.getTrend12M(),
+                InvoiceService.getTopItems(from, to)
+            ]);
 
-            const [listRes, metricsRes, trendRes, topRes] = results;
-
-            // ---------- LIST ----------
+            // Handle list response
             if (listRes.status === "fulfilled") {
                 const rawList = listRes.value?.data ?? [];
-                const list = (rawList || []).map((r: any) => ({
-                    // fallback to primaryKeyID because some responses include it
+                const list = rawList.map((r: any) => ({
                     invoiceID: r.invoiceID ?? r.InvoiceID ?? r.primaryKeyID ?? 0,
-                    // always normalise invoiceNo to string (null => "")
-                    invoiceNo: String(r.invoiceNo ?? r.InvoiceNo ?? r.invoiceNumber ?? "" ?? ""),
+                    invoiceNo: String(r.invoiceNo ?? r.InvoiceNo ?? r.invoiceNumber ?? ""),
                     invoiceDate: r.invoiceDate ?? r.InvoiceDate ?? r.invoiceDateString ?? null,
                     customerName: r.customerName ?? r.CustomerName ?? "",
                     itemsCount: Number(r.itemsCount ?? r.ItemsCount ?? r.items ?? 0),
                     subTotal: Number(r.subTotal ?? r.SubTotal ?? 0),
                     taxPercentage: Number(r.taxPercentage ?? r.TaxPercentage ?? 0),
                     taxAmount: Number(r.taxAmount ?? r.TaxAmount ?? 0),
-                    invoiceAmount: Number(r.invoiceAmount ?? r.InvoiceAmount ?? r.invoiceAmount ?? 0),
-                    updatedOn: r.updatedOn ?? r.UpdatedOn ?? null,
+                    invoiceAmount: Number(r.invoiceAmount ?? r.InvoiceAmount ?? 0),
                     __raw: r,
                 }));
-
                 setInvoices(list);
                 setFiltered(list);
-            } else {
-                console.warn("getList failed", listRes.reason);
-                setInvoices([]);
-                setFiltered([]);
             }
 
-            // ---------- METRICS ----------
+            // Handle metrics response
             if (metricsRes.status === "fulfilled") {
                 const md = metricsRes.value?.data ?? {};
                 setMetrics({
                     invoiceCount: md.invoiceCount ?? md.InvoiceCount ?? 0,
                     totalAmount: Number(md.totalAmount ?? md.TotalAmount ?? 0),
                 });
-            } else {
-                console.warn("getMetrics failed", metricsRes.reason);
-                setMetrics({ invoiceCount: 0, totalAmount: 0 });
             }
 
-            // ---------- TREND (safe to ignore failure) ----------
+            // Handle trend and top items responses...
             if (trendRes.status === "fulfilled") {
                 const tr = trendRes.value?.data ?? [];
-                setTrend12((tr || []).map((t: any) => ({
+                setTrend12(tr.map((t: any) => ({
                     monthStart: t.monthStart,
                     invoiceCount: t.invoiceCount ?? t.InvoiceCount ?? 0,
                     amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
                 })));
-            } else {
-                console.warn("getTrend12M failed", trendRes.reason);
-                setTrend12([]);
             }
 
-            // ---------- TOP ITEMS ----------
             if (topRes.status === "fulfilled") {
                 const top = topRes.value?.data ?? [];
-                setTopItems((top || []).map((t: any) => ({
+                setTopItems(top.map((t: any) => ({
                     itemID: t.itemID,
                     itemName: t.itemName,
                     amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
                 })));
-            } else {
-                console.warn("getTopItems failed", topRes.reason);
-                setTopItems([]);
             }
+
         } catch (ex) {
-            // unexpected (shouldn't happen because we handled allSettled)
             console.error("Unexpected loadAll error", ex);
         } finally {
             setLoadingData(false);
         }
     };
 
-
-    // initial load and on range change
     useEffect(() => {
-        if (!isAuthenticated && !loading) return; // don't load if not auth
+        if (!isAuthenticated && !loading) return;
         loadAll();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [range, customFrom, customTo, isAuthenticated, loading]);
 
-    // client side search filter on invoices array
     useEffect(() => {
         const q = searchText.trim().toLowerCase();
         if (!q) setFiltered(invoices);
@@ -208,7 +185,6 @@ export default function InvoicesPage() {
         ));
     }, [searchText, invoices]);
 
-    // export CSV of current filtered grid
     const exportCsv = () => {
         const cols = [
             ["Invoice No", "invoiceNo"],
@@ -244,179 +220,358 @@ export default function InvoicesPage() {
         URL.revokeObjectURL(url);
     };
 
-    // delete invoice
     const handleDelete = async (id: number) => {
         if (!confirm("Delete this invoice? This is permanent.")) return;
         try {
             await InvoiceService.delete(id);
-            // refresh list and metrics
             await loadAll();
         } catch (err: any) {
             alert(err?.response?.data?.message || "Delete failed");
         }
     };
 
-    // columns for DataGrid
     const columns: GridColDef[] = useMemo(() => ([
         {
             field: "invoiceNo",
             headerName: "Invoice No",
-            width: 160,
-            renderCell: (p) => <Typography sx={{ fontWeight: 600 }}>{p.value}</Typography>,
+            width: isMobile ? 120 : 160,
+            renderCell: (p) => <Typography sx={{ fontWeight: 600, fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{p.value}</Typography>,
             hide: !columnsVisible.invoiceNo
         },
         {
             field: "invoiceDate",
             headerName: "Date",
-            width: 140,
-            renderCell: (p) => <span>{dayjs(p.value).format("DD-MMM-YYYY")}</span>,
+            width: isMobile ? 100 : 140,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{dayjs(p.value).format("DD-MMM-YYYY")}</Typography>,
             hide: !columnsVisible.invoiceDate
         },
         {
             field: "customerName",
             headerName: "Customer",
-            width: 220,
+            width: isMobile ? 140 : 220,
             hide: !columnsVisible.customerName,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{p.value}</Typography>,
         },
         {
             field: "itemsCount",
             headerName: "Items",
-            width: 80,
+            width: isMobile ? 70 : 80,
             type: "number",
-            hide: !columnsVisible.itemsCount
+            hide: !columnsVisible.itemsCount,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{p.value}</Typography>,
         },
         {
             field: "subTotal",
             headerName: "Sub Total",
-            width: 140,
+            width: isMobile ? 100 : 140,
             headerAlign: "right",
             align: "right",
-            renderCell: (p) => <span>{formatMoney(Number(p.value), currencySymbol)}</span>,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{formatMoney(Number(p.value), currencySymbol)}</Typography>,
             hide: !columnsVisible.subTotal
         },
         {
             field: "taxPercentage",
             headerName: "Tax %",
-            width: 90,
+            width: isMobile ? 70 : 90,
             headerAlign: "right",
             align: "right",
-            renderCell: (p) => <span>{Number(p.value ?? 0).toFixed(2)}</span>,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{Number(p.value ?? 0).toFixed(2)}</Typography>,
             hide: !columnsVisible.taxPercentage
         },
         {
             field: "taxAmount",
             headerName: "Tax Amt",
-            width: 140,
+            width: isMobile ? 100 : 140,
             headerAlign: "right",
             align: "right",
-            renderCell: (p) => <span>{formatMoney(Number(p.value), currencySymbol)}</span>,
+            renderCell: (p) => <Typography sx={{ fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{formatMoney(Number(p.value), currencySymbol)}</Typography>,
             hide: !columnsVisible.taxAmount
         },
         {
             field: "invoiceAmount",
             headerName: "Total",
-            width: 160,
+            width: isMobile ? 110 : 160,
             headerAlign: "right",
             align: "right",
-            renderCell: (p) => <span style={{ fontWeight: 700 }}>{formatMoney(Number(p.value), currencySymbol)}</span>,
+            renderCell: (p) => <Typography sx={{ fontWeight: 700, fontSize: isMobile ? "0.8rem" : "0.875rem" }}>{formatMoney(Number(p.value), currencySymbol)}</Typography>,
             hide: !columnsVisible.invoiceAmount
         },
         {
             field: "actions",
             type: "actions",
             headerName: "Actions",
-            width: 140,
+            width: isMobile ? 100 : 140,
             getActions: (params) => [
-                <GridActionsCellItem icon={<EditIcon />} label="Edit" onClick={() => navigate(`/invoice/edit/${params.row.invoiceID}`)} />,
-                <GridActionsCellItem icon={<PrintIcon />} label="Print" onClick={() => window.open(`/invoice/print/${params.row.invoiceID}`, "_blank")} />,
-                <GridActionsCellItem icon={<DeleteIcon />} label="Delete" onClick={() => handleDelete(params.row.invoiceID)} />,
+                <GridActionsCellItem
+                    icon={<Tooltip title="Edit"><EditIcon fontSize={isMobile ? "small" : "medium"} /></Tooltip>}
+                    label="Edit"
+                    onClick={() => navigate(`/invoice/edit/${params.row.invoiceID}`)}
+                />,
+                <GridActionsCellItem
+                    icon={<Tooltip title="Print"><PrintIcon fontSize={isMobile ? "small" : "medium"} /></Tooltip>}
+                    label="Print"
+                    onClick={() => window.open(`/invoice/print/${params.row.invoiceID}`, "_blank")}
+                />,
+                <GridActionsCellItem
+                    icon={<Tooltip title="Delete"><DeleteIcon fontSize={isMobile ? "small" : "medium"} /></Tooltip>}
+                    label="Delete"
+                    onClick={() => handleDelete(params.row.invoiceID)}
+                />,
             ],
             hide: !columnsVisible.actions
         }
-    ]), [columnsVisible, currencySymbol, navigate]);
+    ]), [columnsVisible, currencySymbol, navigate, isMobile]);
 
-    // Column chooser toggle
     const toggleColumn = (k: string) => {
         setColumnsVisible(prev => ({ ...prev, [k]: !prev[k] }));
     };
 
-    // Card small component
-    const StatCard = ({ title, subtitle, children }: any) => (
-        <Paper sx={{ p: 2, borderRadius: 2, minHeight: 110 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>{children}</Typography>
-            <Typography variant="caption" color="text.secondary">{title}</Typography>
-            <Box sx={{ mt: 1 }}><Typography variant="body2" color="text.secondary">{subtitle}</Typography></Box>
-        </Paper>
+    // Improved StatCard component
+    const StatCard = ({ title, value, subtitle, icon, color = "primary" }: any) => (
+        <Card sx={{ height: "100%", borderRadius: 2, boxShadow: 1 }}>
+            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <Box>
+                        <Typography variant="h4" component="div" sx={{ fontWeight: "bold", mb: 0.5 }}>
+                            {value}
+                        </Typography>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            {subtitle}
+                        </Typography>
+                    </Box>
+                    <Box sx={{
+                        color: `${color}.main`,
+                        backgroundColor: `${color}.light`,
+                        borderRadius: 2,
+                        p: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                    }}>
+                        {icon}
+                    </Box>
+                </Box>
+            </CardContent>
+        </Card>
     );
 
     return (
-        <Box>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                <Box>
-                    <Typography variant="h5" sx={{ mb: 0.5 }}>Invoices</Typography>
-                    <Typography variant="body2" color="text.secondary">Manage your invoices and get quick insights.</Typography>
-                </Box>
+        <Box sx={{ p: { xs: 1, sm: 2 } }}>
+            {/* Header Section */}
+            <Box sx={{ mb: 3 }}>
+                <Typography variant="h4" sx={{ fontWeight: "bold", mb: 1 }}>
+                    Invoices
+                </Typography>
 
-                {/* Range filters */}
-                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                    <Button variant={range === "today" ? "contained" : "outlined"} onClick={() => setRange("today")}>Today</Button>
-                    <Button variant={range === "week" ? "contained" : "outlined"} onClick={() => setRange("week")}>Week</Button>
-                    <Button variant={range === "month" ? "contained" : "outlined"} onClick={() => setRange("month")}>Month</Button>
-                    <Button variant={range === "year" ? "contained" : "outlined"} onClick={() => setRange("year")}>Year</Button>
-                    <Button variant={range === "custom" ? "contained" : "outlined"} onClick={() => setRange("custom")}>Custom</Button>
+                {/* Date Range Filter - Responsive */}
+                <Box sx={{
+                    display: "flex",
+                    flexDirection: { xs: "column", sm: "row" },
+                    gap: 2,
+                    alignItems: { xs: "stretch", sm: "center" },
+                    justifyContent: "space-between",
+                    mb: 2
+                }}>
+                    <Box sx={{
+                        display: "flex",
+                        gap: 1,
+                        flexWrap: "wrap",
+                        justifyContent: { xs: "center", sm: "flex-start" }
+                    }}>
+                        {(["today", "week", "month", "year", "custom"] as RangeKey[]).map((key) => (
+                            <Button
+                                key={key}
+                                variant={range === key ? "contained" : "outlined"}
+                                size="small"
+                                onClick={() => setRange(key)}
+                                sx={{
+                                    textTransform: "capitalize",
+                                    minWidth: { xs: "60px", sm: "auto" }
+                                }}
+                            >
+                                {key}
+                            </Button>
+                        ))}
+                    </Box>
+
+                    {/* Custom Date Inputs */}
+                    {range === "custom" && (
+                        <Box sx={{
+                            display: "flex",
+                            gap: 1,
+                            flexWrap: "wrap",
+                            justifyContent: { xs: "center", sm: "flex-start" }
+                        }}>
+                            <TextField
+                                label="From"
+                                type="date"
+                                size="small"
+                                value={customFrom}
+                                onChange={(e) => setCustomFrom(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={{ minWidth: 140 }}
+                            />
+                            <TextField
+                                label="To"
+                                type="date"
+                                size="small"
+                                value={customTo}
+                                onChange={(e) => setCustomTo(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={{ minWidth: 140 }}
+                            />
+                            <Button variant="contained" size="small" onClick={loadAll}>
+                                Apply
+                            </Button>
+                        </Box>
+                    )}
                 </Box>
             </Box>
 
-            {/* Cards */}
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid item xs={12} md={3}>
-                    <StatCard title="Number of Invoices" subtitle={range === "custom" ? `${customFrom} → ${customTo}` : range}>
-                        {metrics.invoiceCount ?? 0}
-                    </StatCard>
+            {/* Stats Cards */}
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                    <StatCard
+                        title="Number of Invoices"
+                        value={metrics.invoiceCount ?? 0}
+                        subtitle={range === "custom" ? `${customFrom} → ${customTo}` : `This ${range}`}
+                        icon={<ReceiptIcon />}
+                        color="primary"
+                    />
                 </Grid>
-                <Grid item xs={12} md={3}>
-                    <StatCard title="Total Invoice Amount" subtitle={range === "custom" ? `${customFrom} → ${customTo}` : range}>
-                        {formatMoney(metrics.totalAmount ?? 0, currencySymbol)}
-                    </StatCard>
+                <Grid item xs={12} sm={6} md={3}>
+                    <StatCard
+                        title="Total Invoice Amount"
+                        value={formatMoney(metrics.totalAmount ?? 0, currencySymbol)}
+                        subtitle={range === "custom" ? `${customFrom} → ${customTo}` : `This ${range}`}
+                        icon={<AttachMoneyIcon />}
+                        color="success"
+                    />
                 </Grid>
-                <Grid item xs={12} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, minHeight: 110 }}>
-                        <Typography variant="subtitle2" color="text.secondary">Last 12 Months</Typography>
-                        {/* Placeholder for line chart */}
-                        <Box sx={{ mt: 1, height: 80, bgcolor: "grey.100", borderRadius: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Typography variant="caption">Line Chart: Monthly Revenue</Typography>
-                        </Box>
-                    </Paper>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card sx={{ height: "100%", borderRadius: 2, boxShadow: 1 }}>
+                        <CardContent sx={{ p: 2 }}>
+                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+                                <Typography variant="subtitle2" color="text.secondary">
+                                    Last 12 Months
+                                </Typography>
+                                <TrendingUpIcon color="info" />
+                            </Box>
+                            <Box sx={{
+                                height: 80,
+                                bgcolor: "grey.50",
+                                borderRadius: 1,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: "1px dashed",
+                                borderColor: "divider"
+                            }}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Line Chart: Monthly Revenue
+                                </Typography>
+                            </Box>
+                        </CardContent>
+                    </Card>
                 </Grid>
-                <Grid item xs={12} md={3}>
-                    <Paper sx={{ p: 2, borderRadius: 2, minHeight: 110 }}>
-                        <Typography variant="subtitle2" color="text.secondary">Top 5 Items</Typography>
-                        {/* Placeholder for pie chart */}
-                        <Box sx={{ mt: 1, height: 80, bgcolor: "grey.100", borderRadius: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Typography variant="caption">Pie Chart: Item Distribution</Typography>
-                        </Box>
-                    </Paper>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card sx={{ height: "100%", borderRadius: 2, boxShadow: 1 }}>
+                        <CardContent sx={{ p: 2 }}>
+                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+                                <Typography variant="subtitle2" color="text.secondary">
+                                    Top 5 Items
+                                </Typography>
+                                <PieChartIcon color="warning" />
+                            </Box>
+                            <Box sx={{
+                                height: 80,
+                                bgcolor: "grey.50",
+                                borderRadius: 1,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: "1px dashed",
+                                borderColor: "divider"
+                            }}>
+                                <Typography variant="caption" color="text.secondary">
+                                    Pie Chart: Item Distribution
+                                </Typography>
+                            </Box>
+                        </CardContent>
+                    </Card>
                 </Grid>
             </Grid>
 
-            {/* Action bar */}
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", bgcolor: "background.paper", px: 1.5, borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
-                        <SearchIcon sx={{ mr: 1 }} />
-                        <input placeholder="Search Invoice No, Customer..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ border: "none", outline: "none" }} />
-                    </Box>
-                </Box>
+            {/* Action Bar */}
+            <Box sx={{
+                display: "flex",
+                flexDirection: { xs: "column", sm: "row" },
+                gap: 2,
+                justifyContent: "space-between",
+                alignItems: { xs: "stretch", sm: "center" },
+                mb: 2
+            }}>
+                {/* Search Box */}
+                <TextField
+                    placeholder="Search Invoice No, Customer..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    size="small"
+                    sx={{
+                        minWidth: { xs: "100%", sm: 300 },
+                        "& .MuiOutlinedInput-root": {
+                            borderRadius: 2,
+                        }
+                    }}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <SearchIcon color="action" />
+                            </InputAdornment>
+                        ),
+                    }}
+                />
 
-                <Box sx={{ display: "flex", gap: 1 }}>
-                    <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate("/invoice/new")}>New Invoice</Button>
-                    <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportCsv}>Export</Button>
-                    <IconButton onClick={openColMenu}><ViewColumnIcon /></IconButton>
+                {/* Action Buttons */}
+                <Box sx={{
+                    display: "flex",
+                    gap: 1,
+                    justifyContent: { xs: "space-between", sm: "flex-end" },
+                    flexWrap: "wrap"
+                }}>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => navigate("/invoice/new")}
+                        size="small"
+                    >
+                        {isSmallMobile ? "New" : "New Invoice"}
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<DownloadIcon />}
+                        onClick={exportCsv}
+                        size="small"
+                    >
+                        {isSmallMobile ? "Export" : "Export CSV"}
+                    </Button>
+                    <Tooltip title="Column Settings">
+                        <IconButton onClick={openColMenu} size="small">
+                            <ViewColumnIcon />
+                        </IconButton>
+                    </Tooltip>
+
                     <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeColMenu}>
-                        <MenuList>
-                            {Object.keys(columnsVisible).map(k => (
-                                <MenuItem key={k} onClick={() => toggleColumn(k)}>
-                                    <FormControlLabel control={<Checkbox checked={Boolean(columnsVisible[k])} />} label={k} />
+                        <MenuList dense>
+                            {Object.entries(columnsVisible).map(([key, visible]) => (
+                                <MenuItem key={key} onClick={() => toggleColumn(key)}>
+                                    <FormControlLabel
+                                        control={<Checkbox checked={visible} />}
+                                        label={key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                                    />
                                 </MenuItem>
                             ))}
                         </MenuList>
@@ -424,18 +579,14 @@ export default function InvoicesPage() {
                 </Box>
             </Box>
 
-            {/* Custom range inputs */}
-            {range === "custom" && (
-                <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
-                    <TextField label="From" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} InputLabelProps={{ shrink: true }} />
-                    <TextField label="To" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} InputLabelProps={{ shrink: true }} />
-                    <Button variant="contained" onClick={() => loadAll()}>Apply</Button>
-                </Box>
-            )}
-
-            {/* Grid */}
-            <Paper sx={{ p: 1 }}>
-                <div style={{ height: 540, width: "100%" }}>
+            {/* Data Grid */}
+            <Paper sx={{
+                p: { xs: 0.5, sm: 2 },
+                borderRadius: 2,
+                boxShadow: 1,
+                height: "100%"
+            }}>
+                <Box sx={{ height: 540, width: "100%" }}>
                     <DataGrid
                         rows={filtered}
                         columns={columns}
@@ -447,11 +598,22 @@ export default function InvoicesPage() {
                         disableSelectionOnClick
                         loading={loadingData}
                         sx={{
-                            ".MuiDataGrid-cell": { alignItems: "center" },
-                            ".MuiDataGrid-columnHeader": { fontWeight: 600 },
+                            border: "none",
+                            "& .MuiDataGrid-cell": {
+                                alignItems: "center",
+                                borderBottom: "1px solid",
+                                borderBottomColor: "divider"
+                            },
+                            "& .MuiDataGrid-columnHeader": {
+                                fontWeight: 600,
+                                backgroundColor: "grey.50"
+                            },
+                            "& .MuiDataGrid-row:hover": {
+                                backgroundColor: "action.hover"
+                            }
                         }}
                     />
-                </div>
+                </Box>
             </Paper>
         </Box>
     );

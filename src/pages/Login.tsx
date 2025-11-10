@@ -37,7 +37,7 @@ export default function Login() {
       saveToken(token, remember);
       setUser(user);
       setCompany(company);
-      navigate("/dashboard");
+      navigate("/invoices");
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 401) setError("Email or password is wrong.");

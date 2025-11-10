@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import { useContext } from "react";
 import { AppBar, Toolbar, Typography, Button, Box } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { AuthContext } from "../contexts/AuthContext";
@@ -13,7 +13,6 @@ export default function TopBar() {
           Invoicing App
         </Typography>
         <Box sx={{ flex: 1 }}>
-          <Button color="inherit" component={RouterLink} to="/dashboard">Dashboard</Button>
           <Button color="inherit" component={RouterLink} to="/invoices">Invoices</Button>
           <Button color="inherit" component={RouterLink} to="/items">Items</Button>
         </Box>

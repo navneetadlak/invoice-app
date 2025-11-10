@@ -127,7 +127,7 @@ export default function Signup() {
       saveToken(token, true);
       setUser(user);
       setCompany(company);
-      nav("/dashboard");
+      nav("/invoices");
     } catch (err: any) {
       const data = err?.response?.data;
       if (data?.errors) {

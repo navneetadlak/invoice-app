@@ -61,7 +61,6 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     };
 
     const navigationItems = [
-        { path: "/dashboard", label: "Dashboard", icon: <DashboardIcon /> },
         { path: "/invoices", label: "Invoices", icon: <InvoiceIcon /> },
         { path: "/items", label: "Items", icon: <ItemsIcon /> },
     ];
@@ -176,7 +175,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                         <Typography
                             variant="h5"
                             component={RouterLink}
-                            to="/dashboard"
+                            to="/invoices"
                             sx={{
                                 color: "primary.main",
                                 textDecoration: "none",
@@ -300,7 +299,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 component="main"
                 sx={{
                     flexGrow: 1,
-                    p: { xs: 2, sm: 3 },
+                    p: { xs: 2, sm: 4 },
                     bgcolor: "background.default",
                     minHeight: "calc(100vh - 120px)"
                 }}
