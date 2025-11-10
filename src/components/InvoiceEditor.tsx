@@ -13,6 +13,18 @@ import {
   Divider,
   Stack,
   CircularProgress,
+  Card,
+  CardContent,
+  FormControl,
+  InputLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -20,6 +32,7 @@ import {
   Delete as DeleteIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
+  AttachMoney as MoneyIcon,
 } from "@mui/icons-material";
 import dayjs from "dayjs";
 import InvoiceService from "../services/invoice.service";
@@ -45,6 +58,10 @@ const uid = (n = 6) => Math.random().toString(36).slice(2, 2 + n);
 const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 export default function InvoiceEditor() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isSmallMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const { isAuthenticated, authInfo } = useContext(AuthContext);
   const currencySymbol = (authInfo?._raw?.company?.currencySymbol) ?? "$";
   const navigate = useNavigate();
@@ -116,7 +133,6 @@ export default function InvoiceEditor() {
     const loadInvoice = async () => {
       try {
         const res = await InvoiceService.getById(editingId);
-        // backend may return array or single object
         const data = Array.isArray(res?.data) ? res.data[0] : res?.data;
         if (!data) {
           console.warn("Invoice not found", editingId);
@@ -162,11 +178,10 @@ export default function InvoiceEditor() {
 
   // --- Auto-generate invoice number for new invoices ---
   useEffect(() => {
-    if (editingId) return; // only for new invoices
+    if (editingId) return;
 
     let mounted = true;
     const fetchNext = async () => {
-      // Prefer a real backend endpoint if available
       try {
         if (typeof InvoiceService.getNextNumber === "function") {
           const r = await (InvoiceService as any).getNextNumber();
@@ -180,7 +195,6 @@ export default function InvoiceEditor() {
         console.debug("getNextNumber not available or failed, falling back", err);
       }
 
-      // Fallback predictable format: INV-<YEAR>-001
       const fallback = `INV-${dayjs().format("YYYY")}-001`;
       if (mounted) setInvoiceNo(fallback);
     };
@@ -304,7 +318,6 @@ export default function InvoiceEditor() {
   const onSave = async () => {
     setServerError(null);
 
-    // Client validations
     const trimmedCustomer = (customerName ?? "").trim();
     if (!trimmedCustomer) {
       setServerError("Customer Name is required. Please enter customer name.");
@@ -315,7 +328,6 @@ export default function InvoiceEditor() {
       return;
     }
 
-    // Validate lines
     if (!Array.isArray(lines) || lines.length === 0) {
       setServerError("Add at least one line.");
       return;
@@ -348,10 +360,8 @@ export default function InvoiceEditor() {
       return;
     }
 
-    // Build payload - don't include invoiceNo for new invoices
     const uiPayload: any = {
       ...(editingId ? { invoiceID: editingId } : {}),
-      // Only include invoiceNo when editing and it exists
       ...(editingId && invoiceNo ? { invoiceNo: Number(invoiceNo) || 0 } : {}),
       invoiceDate,
       customerName: trimmedCustomer,
@@ -364,7 +374,7 @@ export default function InvoiceEditor() {
       invoiceAmount: round2(Number(invoiceAmount || 0)),
       updatedOnPrev: updatedOnPrev ?? null,
       lines: lines.map((r, idx) => ({
-        lineNo: idx + 1,  // This will be converted to RowNo in toServerModel
+        lineNo: idx + 1,
         itemID: r.itemID,
         description: r.description?.trim() ?? "",
         qty: round2(Number(r.qty || 0)),
@@ -378,18 +388,17 @@ export default function InvoiceEditor() {
       const res = await InvoiceService.insertUpdate(uiPayload);
       const data = res?.data ?? {};
       const savedId = data.invoiceID ?? data.invoiceId ?? data.id ?? editingId ?? 0;
-       const savedInvoiceNo = data.invoiceNo ?? data.InvoiceNo ?? null;
+      const savedInvoiceNo = data.invoiceNo ?? data.InvoiceNo ?? null;
       const updatedOn = data.updatedOn ?? data.updatedOnOn ?? null;
-      setUpdatedOnPrev(updatedOn);
-      alert("Saved.");
-        if (savedId) {
-    setUpdatedOnPrev(updatedOn);
-    // if server assigned invoice number, set it in UI (so user sees it)
-    if (savedInvoiceNo !== null && savedInvoiceNo !== undefined) {
-      setInvoiceNo(String(savedInvoiceNo));
-    }
-  }
 
+      if (savedId) {
+        setUpdatedOnPrev(updatedOn);
+        if (savedInvoiceNo !== null && savedInvoiceNo !== undefined) {
+          setInvoiceNo(String(savedInvoiceNo));
+        }
+      }
+
+      alert("Saved.");
       navigate("/invoices");
     } catch (err: any) {
       console.error("Save failed", err);
@@ -407,7 +416,6 @@ export default function InvoiceEditor() {
     }
   };
 
-  // keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onSave(); }
@@ -423,136 +431,369 @@ export default function InvoiceEditor() {
   if (!isAuthenticated) return <Typography>Not authenticated</Typography>;
 
   return (
-    <Box sx={{ pb: 6 }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-        <Typography variant="h5">{editingId ? "Edit Invoice" : "New Invoice"}</Typography>
+    <Box sx={{ p: { xs: 1, sm: 2 }, pb: 6, maxWidth: 1200, margin: "0 auto" }}>
+      {/* Header */}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: "bold" }}>
+          {editingId ? "Edit Invoice" : "New Invoice"}
+        </Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<CancelIcon />} onClick={() => navigate(-1)}>Cancel</Button>
-          <Button variant="contained" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={onSave} disabled={saving}>
-            Save
+          <Button
+            variant="outlined"
+            startIcon={<CancelIcon />}
+            onClick={() => navigate(-1)}
+            size={isSmallMobile ? "small" : "medium"}
+          >
+            {isSmallMobile ? "Cancel" : "Cancel"}
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+            onClick={onSave}
+            disabled={saving}
+            size={isSmallMobile ? "small" : "medium"}
+          >
+            {saving ? "Saving..." : "Save"}
           </Button>
         </Stack>
       </Box>
 
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" sx={{ mb: 1 }}>Invoice Details</Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <TextField label="Invoice No" fullWidth value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} size="small" />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField label="Invoice Date *" type="date" fullWidth value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} InputLabelProps={{ shrink: true }} size="small" />
-          </Grid>
+      {/* Invoice Details Card */}
+      <Card sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: "bold", mb: 3, color: "primary.main" }}>
+            Invoice Details
+          </Typography>
 
-          <Grid item xs={12} md={6}>
-            <TextField label="Customer Name *" fullWidth value={customerName} onChange={(e) => setCustomerName(e.target.value)} size="small" />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField label="City" fullWidth value={city} onChange={(e) => setCity(e.target.value)} size="small" />
-          </Grid>
+          <Grid container spacing={3}>
+            {/* Left Column */}
+            <Grid item xs={12} md={6}>
+              <Stack spacing={3}>
+                {/* Invoice No */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    Invoice No
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={invoiceNo}
+                    onChange={(e) => setInvoiceNo(e.target.value)}
+                    placeholder="INV-001"
+                    sx={{ mb: 0.5 }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Auto next available number
+                  </Typography>
+                </Box>
 
-          <Grid item xs={12} md={6}>
-            <TextField label="Address" fullWidth multiline rows={2} value={address} onChange={(e) => setAddress(e.target.value)} size="small" />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField label="Notes" fullWidth multiline rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} size="small" />
-          </Grid>
-        </Grid>
-      </Paper>
+                {/* Customer Name */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    Customer Name *
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Enter customer name"
+                    required
+                  />
+                </Box>
 
-      {/* Line Items */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-          <Typography variant="subtitle1">Line Items</Typography>
-          <Box>
-            <Button size="small" startIcon={<AddIcon />} onClick={() => addRow(selectedLineUid ?? null)} sx={{ mr: 1 }}>Add Row</Button>
-            <Button size="small" startIcon={<CopyIcon />} onClick={() => selectedLineUid && copyRow(selectedLineUid)} sx={{ mr: 1 }} disabled={!selectedLineUid}>Copy</Button>
-            <Button size="small" startIcon={<DeleteIcon />} onClick={() => selectedLineUid && deleteRow(selectedLineUid)} disabled={!selectedLineUid}>Delete</Button>
-          </Box>
-        </Box>
-
-        <Grid container spacing={1} sx={{ fontWeight: 700, mb: 1 }}>
-          <Grid item xs={1}>#</Grid>
-          <Grid item xs={3}>Item *</Grid>
-          <Grid item xs={3}>Description</Grid>
-          <Grid item xs={1} sx={{ textAlign: "right" }}>Qty *</Grid>
-          <Grid item xs={1} sx={{ textAlign: "right" }}>Rate *</Grid>
-          <Grid item xs={1} sx={{ textAlign: "right" }}>Disc %</Grid>
-          <Grid item xs={2} sx={{ textAlign: "right" }}>Amount</Grid>
-        </Grid>
-
-        {lines.map((row, idx) => (
-          <Grid container spacing={1} key={row._uid} sx={{
-            alignItems: "center",
-            backgroundColor: selectedLineUid === row._uid ? "action.selected" : "transparent",
-            borderRadius: 1,
-            p: 0.5,
-            mb: 0.5,
-          }} onClick={() => setSelectedLineUid(row._uid)}>
-            <Grid item xs={1}><Typography>{idx + 1}</Typography></Grid>
-
-            <Grid item xs={3}>
-              <Select fullWidth size="small" value={row.itemID ?? ""} onChange={(e) => onPickItem(row._uid, e.target.value ? Number(e.target.value) : null)} displayEmpty>
-                <MenuItem value="">Select item...</MenuItem>
-                {itemsOptions.map((it) => <MenuItem key={it.itemID} value={it.itemID}>{it.itemName}</MenuItem>)}
-              </Select>
-              {itemsLoading && <Typography variant="caption" color="text.secondary">Loading items…</Typography>}
-              {itemsError && <Typography variant="caption" color="error">{itemsError}</Typography>}
-              {row.errors?.itemID && <Typography color="error" variant="caption">{row.errors.itemID}</Typography>}
+                {/* Address */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    Address
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    multiline
+                    rows={2}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Enter address"
+                  />
+                </Box>
+              </Stack>
             </Grid>
 
-            <Grid item xs={3}><TextField fullWidth size="small" value={row.description} onChange={(e) => updateLine(row._uid, { description: e.target.value })} /></Grid>
+            {/* Right Column */}
+            <Grid item xs={12} md={6}>
+              <Stack spacing={3}>
+                {/* Invoice Date */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    Invoice Date *
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    size="small"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Box>
 
-            <Grid item xs={1}><TextField fullWidth size="small" type="number" inputProps={{ step: "0.01", min: 0 }} value={row.qty} onChange={(e) => updateLine(row._uid, { qty: Number(e.target.value) })} /></Grid>
+                {/* City */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    City
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Enter city"
+                  />
+                </Box>
 
-            <Grid item xs={1}><TextField fullWidth size="small" type="number" inputProps={{ step: "0.01", min: 0 }} value={row.rate} onChange={(e) => updateLine(row._uid, { rate: Number(e.target.value) })} /></Grid>
-
-            <Grid item xs={1}><TextField fullWidth size="small" type="number" inputProps={{ step: "0.01", min: 0, max: 100 }} value={row.discountPct} onChange={(e) => updateLine(row._uid, { discountPct: Number(e.target.value) })} /></Grid>
-
-            <Grid item xs={2} sx={{ textAlign: "right" }}><Typography sx={{ fontWeight: 700 }}>{formatMoney(row.amount)}</Typography></Grid>
+                {/* Notes */}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                    Notes
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    multiline
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Additional notes"
+                  />
+                </Box>
+              </Stack>
+            </Grid>
           </Grid>
-        ))}
+        </CardContent>
+      </Card>
 
-        <Divider sx={{ my: 1 }} />
-
-        <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
-          <Box sx={{ textAlign: "right" }}>
-            <Typography variant="body2">Subtotal:</Typography>
-            <Typography variant="h6">{formatMoney(subTotal)}</Typography>
+      {/* Line Items Card */}
+      <Card sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
+        <CardContent sx={{ p: 3 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: "bold", color: "primary.main" }}>
+              Line Items
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => addRow(selectedLineUid ?? null)}
+              >
+                Add Row
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<CopyIcon />}
+                onClick={() => selectedLineUid && copyRow(selectedLineUid)}
+                disabled={!selectedLineUid}
+              >
+                Copy
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => selectedLineUid && deleteRow(selectedLineUid)}
+                disabled={!selectedLineUid}
+              >
+                Delete
+              </Button>
+            </Stack>
           </Box>
-        </Box>
-      </Paper>
 
-      {/* Totals */}
-      <Paper sx={{ p: 2 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={8}>
-            <Typography variant="subtitle1">Invoice Totals</Typography>
-            <Typography variant="caption" color="text.secondary">Sub Total is auto-calculated from line items.</Typography>
-          </Grid>
+          {/* Table for Line Items */}
+          <TableContainer component={Paper} variant="outlined">
+            <Table sx={{ minWidth: 650 }} size="small">
+              <TableHead>
+                <TableRow sx={{ backgroundColor: 'grey.50' }}>
+                  <TableCell sx={{ fontWeight: 'bold', width: '5%' }}>S.No</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Item *</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25%' }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10%', textAlign: 'right' }}>Qty *</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10%', textAlign: 'right' }}>Rate *</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10%', textAlign: 'right' }}>Disc %</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '15%', textAlign: 'right' }}>Amount</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {lines.map((row, idx) => (
+                  <TableRow
+                    key={row._uid}
+                    sx={{
+                      backgroundColor: selectedLineUid === row._uid ? 'action.selected' : 'transparent',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setSelectedLineUid(row._uid)}
+                  >
+                    <TableCell>{idx + 1}</TableCell>
+                    <TableCell>
+                      <FormControl fullWidth size="small">
+                        <Select
+                          value={row.itemID ?? ""}
+                          onChange={(e) => onPickItem(row._uid, e.target.value ? Number(e.target.value) : null)}
+                          displayEmpty
+                          error={!!row.errors?.itemID}
+                        >
+                          <MenuItem value="">Select Item...</MenuItem>
+                          {itemsOptions.map((it) => (
+                            <MenuItem key={it.itemID} value={it.itemID}>
+                              {it.itemName}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {row.errors?.itemID && (
+                        <Typography variant="caption" color="error">
+                          {row.errors.itemID}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={row.description}
+                        onChange={(e) => updateLine(row._uid, { description: e.target.value })}
+                        placeholder="Description"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        inputProps={{ step: "0.01", min: 0 }}
+                        value={row.qty}
+                        onChange={(e) => updateLine(row._uid, { qty: Number(e.target.value) })}
+                        sx={{ textAlign: 'right' }}
+                        error={!!row.errors?.qty}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        inputProps={{ step: "0.01", min: 0 }}
+                        value={row.rate}
+                        onChange={(e) => updateLine(row._uid, { rate: Number(e.target.value) })}
+                        sx={{ textAlign: 'right' }}
+                        error={!!row.errors?.rate}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        inputProps={{ step: "0.01", min: 0, max: 100 }}
+                        value={row.discountPct}
+                        onChange={(e) => updateLine(row._uid, { discountPct: Number(e.target.value) })}
+                        sx={{ textAlign: 'right' }}
+                        error={!!row.errors?.discountPct}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ textAlign: 'right', fontWeight: 'bold' }}>
+                      {formatMoney(row.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-          <Grid item xs={6} md={2}>
-            <TextField label="Tax %" type="number" size="small" fullWidth inputProps={{ step: "0.01", min: 0, max: 100 }} value={taxPct} onChange={(e) => setTaxPct(round2(Number(e.target.value || 0)))} />
-          </Grid>
+          {/* Subtotal */}
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+            <Box sx={{ textAlign: 'right', minWidth: 200 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Subtotal: {formatMoney(subTotal)}
+              </Typography>
+            </Box>
+          </Box>
+        </CardContent>
+      </Card>
 
-          <Grid item xs={6} md={2}>
-            <TextField label="Tax Amount" type="number" size="small" fullWidth inputProps={{ step: "0.01", min: 0 }} value={taxAmt} onChange={(e) => onTaxAmountChange(Number(e.target.value || 0))} />
-          </Grid>
+      {/* Invoice Totals Card */}
+      <Card sx={{ borderRadius: 2, boxShadow: 2 }}>
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: "bold", mb: 3, color: "primary.main" }}>
+            Invoice Totals
+          </Typography>
 
-          <Grid item xs={12} md={12} sx={{ mt: 1 }}>
-            <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 2 }}>
-              <Box sx={{ textAlign: "right" }}>
-                <Typography variant="body2">Invoice Amount</Typography>
-                <Typography variant="h5" sx={{ fontWeight: 800, backgroundColor: "grey.100", display: "inline-block", p: 1, borderRadius: 1 }}>
+          <Grid container spacing={3} alignItems="flex-end">
+            <Grid item xs={12} md={6}>
+              <Stack spacing={2}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1 }}>
+                  <Typography variant="body1">Sub Total</Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                    {formatMoney(subTotal)}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1 }}>
+                  <Typography variant="body1">Tax</Typography>
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <TextField
+                      size="small"
+                      type="number"
+                      inputProps={{ step: "0.01", min: 0, max: 100 }}
+                      value={taxPct}
+                      onChange={(e) => setTaxPct(round2(Number(e.target.value || 0)))}
+                      sx={{ width: 80 }}
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      %
+                    </Typography>
+                    <TextField
+                      size="small"
+                      type="number"
+                      inputProps={{ step: "0.01", min: 0 }}
+                      value={taxAmt}
+                      onChange={(e) => onTaxAmountChange(Number(e.target.value || 0))}
+                      sx={{ width: 100 }}
+                    />
+                  </Box>
+                </Box>
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Box sx={{
+                textAlign: 'center',
+                p: 3,
+                backgroundColor: 'primary.light',
+                borderRadius: 2,
+                border: '2px solid',
+                borderColor: 'primary.main'
+              }}>
+                <Typography variant="body2" color="primary.dark" sx={{ mb: 1 }}>
+                  Invoice Amount
+                </Typography>
+                <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.dark' }}>
                   {formatMoney(invoiceAmount)}
                 </Typography>
               </Box>
-            </Box>
+            </Grid>
           </Grid>
-        </Grid>
-      </Paper>
+        </CardContent>
+      </Card>
 
-      {serverError && <Typography color="error" sx={{ mt: 2 }}>{serverError}</Typography>}
+      {serverError && (
+        <Typography color="error" sx={{ mt: 2, p: 2, backgroundColor: 'error.light', borderRadius: 1 }}>
+          {serverError}
+        </Typography>
+      )}
     </Box>
   );
 }
