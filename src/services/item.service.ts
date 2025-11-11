@@ -26,16 +26,13 @@ export const ItemService = {
   getPictureThumbnail: (id: number) =>
     api.get(`/Item/PictureThumbnail/${id}`, { responseType: "blob" }),
 
-  // add below existing exports in src/services/item.service.ts
-// Form-data endpoints: let browser set Content-Type with boundary (don't set it manually)
-insertForm: (fd: FormData) =>
-  api.post("/Item", fd, { headers: { "Content-Type": "multipart/form-data" } }),
+  insertForm: (fd: FormData) =>
+    api.post("/Item", fd, { headers: { "Content-Type": "multipart/form-data" } }),
 
-updateForm: (fd: FormData) =>
-  api.put("/Item", fd, { headers: { "Content-Type": "multipart/form-data" } }),
+  updateForm: (fd: FormData) =>
+    api.put("/Item", fd, { headers: { "Content-Type": "multipart/form-data" } }),
 
-// Optional unified insertUpdateForm if backend exposes an insertupdate endpoint
-insertUpdateForm: (fd: FormData) =>
-  api.post("/Item/InsertUpdate", fd, { headers: { "Content-Type": "multipart/form-data" } }),
+  insertUpdateForm: (fd: FormData) =>
+    api.post("/Item/InsertUpdate", fd, { headers: { "Content-Type": "multipart/form-data" } }),
 
 };

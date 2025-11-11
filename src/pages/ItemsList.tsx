@@ -29,7 +29,6 @@ import ItemEditor from "../components/ItemEditor";
 
 function formatCurrency(n: number | null | undefined) {
     if (n == null) return "-";
-    // Use Intl.NumberFormat to get thousand separators and two decimals
     return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
 
@@ -201,7 +200,6 @@ export default function ItemsList() {
         }
     ], [visibleCols]);
 
-    // Export visible rows & columns as CSV
     const exportCsv = () => {
         // columns to include in export (visible ones)
         const colsToExport = columns.filter(c => !c.hide && c.field !== "actions");
@@ -234,7 +232,6 @@ export default function ItemsList() {
         URL.revokeObjectURL(url);
     };
 
-    // Column chooser menu handlers
     const openColMenu = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
     const closeColMenu = () => setAnchorEl(null);
 
@@ -242,7 +239,6 @@ export default function ItemsList() {
         setVisibleCols(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
-    // Mobile card view
     if (isMobile) {
         return (
             <Box p={2}>
@@ -299,7 +295,6 @@ export default function ItemsList() {
         );
     }
 
-    // Desktop DataGrid view
     return (
         <Box p={2}>
             <Box mb={2} display="flex" justifyContent="space-between" alignItems="center">

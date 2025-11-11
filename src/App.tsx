@@ -14,7 +14,6 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
-      {/* Root redirect */}
       <Route path="/" element={<Navigate to="/invoices" replace />} />
 
       <Route

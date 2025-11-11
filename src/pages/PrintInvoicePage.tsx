@@ -16,28 +16,23 @@ export default function PrintInvoicePage() {
 
     const [invoice, setInvoice] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const currencySymbol = "$"; // or read from auth/context if needed
+    const currencySymbol = "$"; 
 
     useEffect(() => {
         let mounted = true;
         const load = async () => {
             setLoading(true);
             try {
-                // API: InvoiceService.getById uses getList?invoiceID=...
                 const res = await InvoiceService.getById(Number(id));
-                // server returns array or object depending on API; handle both
                 const data = res?.data ?? null;
                 let dto = null;
                 if (Array.isArray(data)) {
                     dto = data[0] ?? null;
                 } else if (typeof data === "object") {
-                    // API may return object with header + lines
                     dto = data;
                 }
 
-                // Normalize expected fields
                 if (dto && mounted) {
-                    // Try to extract lines if server returns them inside `lines` or `Lines`
                     const lines = dto.lines ?? dto.Lines ?? dto.invoiceLines ?? dto.items ?? [];
                     setInvoice({
                         invoiceID: dto.invoiceID ?? dto.InvoiceID ?? dto.primaryKeyID ?? Number(id),

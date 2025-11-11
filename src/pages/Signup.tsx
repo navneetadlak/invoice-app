@@ -9,12 +9,7 @@ import { AuthService } from "../services/auth.service";
 import { AuthContext } from "../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 
-/**
- * Set expected ZIP length here:
- * - If backend expects 5 digits, keep ZIP_LENGTH = 5
- * - If backend expects 6 digits (spec change), set ZIP_LENGTH = 6
- */
-const ZIP_LENGTH = 5; // <<-- change to 6 if backend updates to accept 6-digit zip
+const ZIP_LENGTH = 5;
 
 const passwordStrength = (pw: string) => {
   let score = 0;
@@ -66,14 +61,12 @@ export default function Signup() {
     setPreview(URL.createObjectURL(f));
   };
 
-  // sanitize zip input: digits only and capped to ZIP_LENGTH
   const handleZipInput = (value: string) => {
     const digitsOnly = value.replace(/\D/g, "");
     const capped = digitsOnly.slice(0, ZIP_LENGTH);
     handleChange("Zip", capped);
   };
 
-  // prevent paste of invalid content into zip field
   const onZipPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData("text");
     const digits = text.replace(/\D/g, "").slice(0, ZIP_LENGTH);
@@ -92,13 +85,12 @@ export default function Signup() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.Email))
       e.Email = "Enter a valid email address.";
     if (!form.Password || form.Password.length < 8 ||
-        !/[A-Za-z]/.test(form.Password) || !/[0-9]/.test(form.Password))
+      !/[A-Za-z]/.test(form.Password) || !/[0-9]/.test(form.Password))
       e.Password = "Password must be at least 8 characters with letters + numbers.";
     if (!form.CompanyName.trim()) e.CompanyName = "Please enter your company name.";
     if (!form.Address.trim()) e.Address = "Please enter company address.";
     if (!form.City.trim()) e.City = "Please enter city.";
 
-    // exact length check depending on ZIP_LENGTH
     const zipRegex = new RegExp(`^\\d{${ZIP_LENGTH}}$`);
     if (!zipRegex.test(form.Zip))
       e.Zip = `Zip must be exactly ${ZIP_LENGTH} digits.`;
@@ -112,9 +104,7 @@ export default function Signup() {
   const submit = async () => {
     if (!validate()) return;
 
-    // Always use FormData for upload (works for file & non-file)
     const fd = new FormData();
-    // append as strings explicitly so leading zeros preserved
     for (const [k, v] of Object.entries(form)) {
       fd.append(k, String(v ?? ""));
     }
@@ -192,7 +182,6 @@ export default function Signup() {
               />
             </Grid>
 
-            {/* Company Information */}
             <Grid item xs={12} md={6}>
               <Typography variant="subtitle1" gutterBottom>Company Information</Typography>
               <TextField label="Company Name*" fullWidth margin="dense"

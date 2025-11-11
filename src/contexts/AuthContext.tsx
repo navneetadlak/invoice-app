@@ -8,14 +8,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [company, setCompany] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // derive isAuthenticated from token presence and expiry is optional
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   useEffect(() => {
     const token = readToken();
     if (token) {
-      setAuthHeader(token);       // ensure axios has header immediately
-      setIsAuthenticated(true);  // we consider presence of token => authenticated
+      setAuthHeader(token);     
+      setIsAuthenticated(true);  
     } else {
       setIsAuthenticated(false);
     }
