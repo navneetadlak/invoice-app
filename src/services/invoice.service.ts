@@ -57,6 +57,7 @@ const InvoiceService = {
   getTopItems: (from?: string, to?: string, topN = 5) =>
     api.get("/invoice/topitems", { params: { from, to, topN } }),
 
+
   insertUpdate: (payload: any) => {
     const body = toServerModel(payload);
 
@@ -77,9 +78,7 @@ const InvoiceService = {
     }
   },
 
-
-
-  delete: (invoiceID: number) => api.post("/invoice/delete", { invoiceID }),
+  delete: (invoiceID: number) => api.delete(`/invoice/${invoiceID}`),
 };
 
 export default InvoiceService;

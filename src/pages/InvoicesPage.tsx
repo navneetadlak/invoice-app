@@ -21,6 +21,9 @@ import {
     useTheme,
     useMediaQuery,
 } from "@mui/material";
+import {
+    LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid, Legend, PieChart, Pie, Cell
+} from "recharts";
 import AddIcon from "@mui/icons-material/Add";
 import DownloadIcon from "@mui/icons-material/FileDownload";
 import ViewColumnIcon from "@mui/icons-material/ViewColumn";
@@ -118,9 +121,10 @@ export default function InvoicesPage() {
             ]);
 
             // Handle list response
+            let list: any[] = [];
             if (listRes.status === "fulfilled") {
                 const rawList = listRes.value?.data ?? [];
-                const list = rawList.map((r: any) => ({
+                list = rawList.map((r: any) => ({
                     invoiceID: r.invoiceID ?? r.InvoiceID ?? r.primaryKeyID ?? 0,
                     invoiceNo: String(r.invoiceNo ?? r.InvoiceNo ?? r.invoiceNumber ?? ""),
                     invoiceDate: r.invoiceDate ?? r.InvoiceDate ?? r.invoiceDateString ?? null,
@@ -136,32 +140,79 @@ export default function InvoicesPage() {
                 setFiltered(list);
             }
 
-            // Handle metrics response
+            // Fallback helpers (compute metrics/trend/top from list if APIs fail)
+            const computeMetricsFromList = (arr: any[]) => {
+                const invoiceCount = arr.length;
+                const totalAmount = arr.reduce((s: number, it: any) => s + Number(it.invoiceAmount ?? 0), 0);
+                return { invoiceCount, totalAmount };
+            };
+
+            // Handle metrics response (with fallback)
             if (metricsRes.status === "fulfilled") {
                 const md = metricsRes.value?.data ?? {};
-                setMetrics({
-                    invoiceCount: md.invoiceCount ?? md.InvoiceCount ?? 0,
-                    totalAmount: Number(md.totalAmount ?? md.TotalAmount ?? 0),
-                });
+                const invoiceCount = md.invoiceCount ?? md.InvoiceCount ?? null;
+                const totalAmount = md.totalAmount ?? md.TotalAmount ?? null;
+                if (invoiceCount !== null && totalAmount !== null) {
+                    setMetrics({
+                        invoiceCount,
+                        totalAmount: Number(totalAmount)
+                    });
+                } else {
+                    // fallback
+                    setMetrics(computeMetricsFromList(list));
+                }
+            } else {
+                setMetrics(computeMetricsFromList(list));
             }
 
-            // Handle trend and top items responses...
-            if (trendRes.status === "fulfilled") {
-                const tr = trendRes.value?.data ?? [];
+            // Trend: prefer server, else roll-your-own monthly totals for last 12 months
+            if (trendRes.status === "fulfilled" && Array.isArray(trendRes.value?.data) && trendRes.value.data.length) {
+                const tr = trendRes.value.data;
                 setTrend12(tr.map((t: any) => ({
                     monthStart: t.monthStart,
                     invoiceCount: t.invoiceCount ?? t.InvoiceCount ?? 0,
                     amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
                 })));
+            } else {
+                // compute last-12-month buckets from list
+                const now = dayjs();
+                const months: any[] = [];
+                for (let i = 11; i >= 0; i--) {
+                    const dt = now.subtract(i, "month").startOf("month");
+                    const key = dt.format("YYYY-MM");
+                    months.push({ key, label: dt.format("MMM YY"), monthStart: dt.toISOString(), invoiceCount: 0, amountSum: 0 });
+                }
+                list.forEach((inv: any) => {
+                    if (!inv.invoiceDate) return;
+                    const m = dayjs(inv.invoiceDate).format("YYYY-MM");
+                    const bucket = months.find((x) => x.key === m);
+                    if (bucket) {
+                        bucket.invoiceCount += 1;
+                        bucket.amountSum += Number(inv.invoiceAmount ?? 0);
+                    }
+                });
+                setTrend12(months.map(m => ({ monthStart: m.monthStart, invoiceCount: m.invoiceCount, amountSum: m.amountSum })));
             }
 
-            if (topRes.status === "fulfilled") {
-                const top = topRes.value?.data ?? [];
+            // Top items: prefer server, else fallback to counting itemsCount per invoice (best-effort)
+            if (topRes.status === "fulfilled" && Array.isArray(topRes.value?.data) && topRes.value.data.length) {
+                const top = topRes.value.data;
                 setTopItems(top.map((t: any) => ({
                     itemID: t.itemID,
                     itemName: t.itemName,
                     amountSum: Number(t.amountSum ?? t.AmountSum ?? 0),
                 })));
+            } else {
+                // fallback: use invoice itemsCount as proxy and show the largest invoices
+                const fallbackTop = [...list]
+                    .sort((a: any, b: any) => (b.invoiceAmount ?? 0) - (a.invoiceAmount ?? 0))
+                    .slice(0, 5)
+                    .map((inv: any, idx: number) => ({
+                        itemID: idx + 1,
+                        itemName: `Invoice ${inv.invoiceNo || inv.invoiceID}`,
+                        amountSum: Number(inv.invoiceAmount ?? 0),
+                    }));
+                setTopItems(fallbackTop);
             }
 
         } catch (ex) {
@@ -170,6 +221,7 @@ export default function InvoicesPage() {
             setLoadingData(false);
         }
     };
+
 
     useEffect(() => {
         if (!isAuthenticated && !loading) return;
@@ -439,7 +491,6 @@ export default function InvoicesPage() {
                         value={metrics.invoiceCount ?? 0}
                         subtitle={range === "custom" ? `${customFrom} → ${customTo}` : `This ${range}`}
                         icon={<ReceiptIcon />}
-                        color="primary"
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
@@ -448,20 +499,25 @@ export default function InvoicesPage() {
                         value={formatMoney(metrics.totalAmount ?? 0, currencySymbol)}
                         subtitle={range === "custom" ? `${customFrom} → ${customTo}` : `This ${range}`}
                         icon={<AttachMoneyIcon />}
-                        color="success"
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                     <Card sx={{ height: "100%", borderRadius: 2, boxShadow: 1 }}>
                         <CardContent sx={{ p: 2 }}>
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-                                <Typography variant="subtitle2" color="text.secondary">
-                                    Last 12 Months
-                                </Typography>
-                                <TrendingUpIcon color="info" />
+                            <Box sx={{ height: 120 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={trend12.map(t => ({ name: dayjs(t.monthStart).format("MMM YY"), amount: Number(t.amountSum || 0) }))}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                        <YAxis tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                                        <ReTooltip formatter={(value: any) => formatMoney(Number(value), currencySymbol)} />
+                                        <Line type="monotone" dataKey="amount" stroke={theme.palette.info.main} strokeWidth={2} dot={{ r: 2 }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
                             </Box>
+
                             <Box sx={{
-                                height: 80,
+                                height: 30,
                                 bgcolor: "grey.50",
                                 borderRadius: 1,
                                 display: "flex",
@@ -479,26 +535,33 @@ export default function InvoicesPage() {
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                     <Card sx={{ height: "100%", borderRadius: 2, boxShadow: 1 }}>
-                        <CardContent sx={{ p: 2 }}>
+                        <CardContent sx={{ p: 4 }}>
                             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
                                 <Typography variant="subtitle2" color="text.secondary">
                                     Top 5 Items
                                 </Typography>
                                 <PieChartIcon color="warning" />
                             </Box>
-                            <Box sx={{
-                                height: 80,
-                                bgcolor: "grey.50",
-                                borderRadius: 1,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                border: "1px dashed",
-                                borderColor: "divider"
-                            }}>
-                                <Typography variant="caption" color="text.secondary">
-                                    Pie Chart: Item Distribution
-                                </Typography>
+                            <Box sx={{ height: 120 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={topItems.map(t => ({ name: t.itemName, value: Number(t.amountSum || 0) }))}
+                                            dataKey="value"
+                                            nameKey="name"
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={40}
+                                            innerRadius={20}
+                                            label={(entry) => entry.name.length > 12 ? `${entry.name.slice(0, 10)}...` : entry.name}
+                                        >
+                                            {topItems.map((_, idx) => (
+                                                <Cell key={`cell-${idx}`} fill={["#8884d8", "#82ca9d", "#ffc658", "#ff7f50", "#a4de6c"][idx % 5]} />
+                                            ))}
+                                        </Pie>
+                                        <ReTooltip formatter={(v: any) => formatMoney(Number(v), currencySymbol)} />
+                                    </PieChart>
+                                </ResponsiveContainer>
                             </Box>
                         </CardContent>
                     </Card>
