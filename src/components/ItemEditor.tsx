@@ -117,74 +117,53 @@ export default function ItemEditor({ open, record = null, onClose, onSaved }: Pr
     return mapped;
   };
 
-  const handleSave = async () => {
-    if (!validate()) return;
+const handleSave = async () => {
+  if (!validate()) return;
 
-    // Build FormData (backend expects multipart when picture included)
-    const fd = new FormData();
-    // IMPORTANT: use the exact field names your backend expects; adjust keys below if necessary.
-    fd.append("ItemID", String(form.itemID ?? 0));
-    fd.append("ItemName", form.itemName.trim());
-    fd.append("Description", form.description ?? "");
-    // For numeric fields append as string to preserve format
-    fd.append("SaleRate", String(Number(form.saleRate || 0)));
-    fd.append("DiscountPct", String(Number(form.discountPct || 0)));
-    // updatedOnPrev is required for update concurrency; null for new
-    if (updatedOnPrev) fd.append("updatedOnPrev", updatedOnPrev);
-    else fd.append("updatedOnPrev", "");
+  setSaving(true);
+  setErrors({});
 
-    if (pictureFile) {
-      // key name depends on backend; "picture" or "itemPicture" etc — change if needed
-      fd.append("picture", pictureFile);
+  try {
+    const payload: any = {
+      ItemID: form.itemID ?? 0,
+      ItemName: form.itemName.trim(),
+      Description: form.description ?? "",
+      SaleRate: Number(form.saleRate || 0),
+      DiscountPct: Number(form.discountPct || 0),
+      updatedOnPrev: updatedOnPrev ?? null,
+    };
+
+    console.debug("Sending JSON payload (no image):", JSON.stringify(payload, null, 2));
+
+    let res;
+    if (isEdit && payload.ItemID) {
+      res = await ItemService.update(payload);
+    } else {
+      // send JSON insert
+      res = await ItemService.insert(payload);
     }
 
-    setSaving(true);
-    setErrors({});
-
-    try {
-      let res;
-      // call insert or update endpoint depending on itemID
-      if (isEdit && form.itemID) {
-        // try to call an "insertupdate" if your ItemService exposes it; otherwise call update
-        if ((ItemService as any).insertUpdate) {
-          res = await (ItemService as any).insertUpdate(fd);
-        } else if ((ItemService as any).updateWithForm) {
-          // hypothetical
-          res = await (ItemService as any).updateWithForm(fd);
-        } else {
-          // fallback: hit update endpoint with FormData (your ItemService.update must accept FormData)
-          res = await ItemService.update(fd as any);
-        }
-      } else {
-        // insert
-        if ((ItemService as any).insertForm) {
-          res = await (ItemService as any).insertForm(fd);
-        } else {
-          res = await ItemService.insert(fd as any);
-        }
-      }
-
-      // Expect success { itemID, updatedOn } or similar
-      const newId = res?.data?.itemID ?? res?.data?.id ?? form.itemID;
-      if (onSaved) onSaved(Number(newId));
-      onClose();
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 409) {
-        // duplicate
-        setErrors((s) => ({ ...s, itemName: "Name already exists." }));
-      } else if (status === 412) {
-        setErrors((s) => ({ ...s, _global: "Item updated by another user. Please reload and try again." }));
-      } else if (err?.response?.data) {
-        const mapped = mapServerErrors(err.response.data);
-        setErrors((s) => ({ ...s, ...mapped }));
-      } else {
-        setErrors((s) => ({ ...s, _global: "Save failed. Please try again." }));
-      }
-    } finally {
-      setSaving(false);
+    const newId = res?.data?.itemID ?? res?.data?.id ?? form.itemID;
+    if (onSaved) onSaved(Number(newId));
+    onClose();
+  } catch (err: any) {
+    const status = err?.response?.status;
+    if (status === 409) {
+      setErrors((s) => ({ ...s, itemName: "Name already exists." }));
+    } else if (status === 412) {
+      setErrors((s) => ({ ...s, _global: "Item updated by another user. Please reload and try again." }));
+    } else if (err?.response?.data) {
+      const mapped = mapServerErrors(err.response.data);
+      setErrors((s) => ({ ...s, ...mapped }));
+    } else {
+      setErrors((s) => ({ ...s, _global: "Save failed. Please try again." }));
     }
-  };
+  } finally {
+    setSaving(false);
+  }
+};
+
+
 
   // small helpers
   const handleChange = (key: string, value: any) => {
