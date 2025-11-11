@@ -362,7 +362,7 @@ export default function InvoiceEditor() {
 
     const uiPayload: any = {
       ...(editingId ? { invoiceID: editingId } : {}),
-      ...(editingId && invoiceNo ? { invoiceNo: Number(invoiceNo) || 0 } : {}),
+      ...(editingId && invoiceNo ? { invoiceNo: Number(invoiceNo) } : {}),
       invoiceDate,
       customerName: trimmedCustomer,
       address: address.trim(),
@@ -383,6 +383,8 @@ export default function InvoiceEditor() {
       })),
     };
 
+    console.log('UI Payload before service:', uiPayload);
+
     setSaving(true);
     try {
       const res = await InvoiceService.insertUpdate(uiPayload);
@@ -401,7 +403,15 @@ export default function InvoiceEditor() {
       alert("Saved.");
       navigate("/invoices");
     } catch (err: any) {
-      console.error("Save failed", err);
+      console.error("Save failed (full error):", err);
+      console.group("Save failed - debug info");
+      // console.log("err.message:", err?.message);
+      // console.log("err.request (if any):", err?.request);
+      // console.log("err.response.status:", err?.response?.status);
+      // console.log("err.response.headers:", err?.response?.headers);
+      // console.log("err.response.data:", JSON.stringify(err?.response?.data, null, 2));
+      // console.groupEnd();
+
       const sd = err?.response?.data;
       if (sd?.errors) {
         const messages = Object.entries(sd.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join("\n");
