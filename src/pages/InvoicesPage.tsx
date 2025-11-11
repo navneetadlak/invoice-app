@@ -31,10 +31,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import PrintIcon from "@mui/icons-material/Print";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SearchIcon from "@mui/icons-material/Search";
-import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import ReceiptIcon from "@mui/icons-material/Receipt";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import PieChartIcon from "@mui/icons-material/PieChart";
 import InvoiceService from "../services/invoice.service";
 import { AuthContext } from "../contexts/AuthContext";
@@ -362,7 +360,7 @@ export default function InvoicesPage() {
                 <GridActionsCellItem
                     icon={<Tooltip title="Print"><PrintIcon fontSize={isMobile ? "small" : "medium"} /></Tooltip>}
                     label="Print"
-                    onClick={() => window.open(`/invoice/print/${params.row.invoiceID}`, "_blank")}
+                    onClick={() => window.open(`/invoice/print/${params.row.invoiceID}?autoprint=1`, "_blank")}
                 />,
                 <GridActionsCellItem
                     icon={<Tooltip title="Delete"><DeleteIcon fontSize={isMobile ? "small" : "medium"} /></Tooltip>}

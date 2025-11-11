@@ -6,19 +6,17 @@ import InvoicesPage from "./pages/InvoicesPage";
 import PrivateRoute from "./components/PrivateRoute";
 import MainLayout from "./layouts/MainLayout";
 import InvoiceEditor from "./components/InvoiceEditor";
+import PrintInvoicePage from "./pages/PrintInvoicePage";
 
 export default function App() {
   return (
-    // Remove the Container wrapper
     <Routes>
-      {/* Public routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
       {/* Root redirect */}
       <Route path="/" element={<Navigate to="/invoices" replace />} />
 
-      {/* Protected layout */}
       <Route
         element={
           <PrivateRoute>
@@ -30,9 +28,9 @@ export default function App() {
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/invoice/new" element={<InvoiceEditor />} />
         <Route path="/invoice/edit/:id" element={<InvoiceEditor />} />
+        <Route path="/invoice/print/:id" element={<PrintInvoicePage />} />
       </Route>
 
-      {/* fallback */}
       <Route path="*" element={<div>Not found</div>} />
     </Routes>
   );
